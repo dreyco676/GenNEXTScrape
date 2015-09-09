@@ -18,7 +18,7 @@ corresponding to the columns of the HTML table:
     dataFiles
     helpFiles
 
-dataFiles is a list of dictionaries. Each dictionary has two attributes: fileType and url.
+dataFiles and helpFiles are lists of dictionaries. Each dictionary has two attributes: fileType and url.
 
 In addition to the Python modules imported above, this script requires Google Chrome and
 the WebDriver for Google Chrome. The WebDriver must be in the current path.
