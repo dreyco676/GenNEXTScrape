@@ -18,7 +18,7 @@ def nice_filename(s):
 preferences = dict(tab=1, xlsx=2, xls=3, zip=4, txt=5, pdf=6)
 
 parser = etree.HTMLParser()
-tree = etree.parse('MDEReports.html', parser)
+tree = etree.parse('../html/MDEReports.html', parser)
 root = tree.getroot()
 rows = root.findall('body/tbody/tr')
 docpath = '../doc/'
