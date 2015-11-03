@@ -5,7 +5,9 @@ import json
 import csv
 import os
 import urllib
-
+import sqlite3
+import logging
+logging.basicConfig(filename='errors.log',level=logging.ERROR)
 BASE_URL = 'http://w20.education.state.mn.us'
 DATA_PATH = 'downloads/'
 
@@ -50,7 +52,18 @@ def get_report_url(search_text):
             if search_text == title.lower.strip():
                 return url
 
+def table_to_array(table):
+    array = []
+    for tr in table.find_elements_by_tag_name('tr'):
+        row = []
+        for td in tr.find_elements_by_tag_name('td'):
+            row.append(td.text.strip())
+        for th in tr.find_elements_by_tag_name('th'):
+            row.append(th.text.strip())
+        array.append(row)
+    return array
 
+    
 def download_reports(url):
     """Download all available reports by url. Use the get_report_url()
     function to lookup the url."""
@@ -78,9 +91,98 @@ def download_reports(url):
             print 'Downloading %s' % full_filename
             urllib.urlretrieve(url, full_filename)
         
+def scrape_expenditures(url, starting_year=9999, starting_district=''):
+    """
+    Scrape the district and site level reports on expenditures from
+    the MN Dept of Education website, and write the data to an sqlite3
+    database.
 
-    
+    This script may take several days to run. If the script is interrupted,
+    then it may be restarted by setting the optional arguments
+    start_year and starting_district.
+    """
+    errfile = csv.writer(open('err.log', 'wb'))
+    con = sqlite3.connect('data4good.db')
+    cursor = con.cursor()
+    if starting_year == 9999:
+        cursor.executescript("""
+            DROP TABLE IF EXISTS Expenditures;
+            CREATE TABLE Expenditures(
+                Year INT,
+                DistrictName TEXT,
+                DistrictNumber TEXT,
+                DistrictType TEXT,
+                SchoolName TEXT,
+                SchoolNumber TEXT,
+                StudentsServed TEXT,
+                ProgramCategory TEXT,
+                SiteExpenditurePerDistrict TEXT,
+                DistrictWideAllocatedPerADMServed TEXT,
+                Total TEXT,
+                DollarsPerADMServed TEXT,
+                PercentOfTotal TEXT);
+        """)
+    url = BASE_URL + url
+    driver = webdriver.Chrome()
+    driver.get(url)
+    select_year = driver.find_element_by_id('cmbSchoolYear')
+    years = select_year.find_elements_by_tag_name('option')
+    for year_elt in years:
+        year = int(year_elt.text)
+        if year > starting_year:
+            continue
+        print year
+        year_elt.click()
+        time.sleep(.1)
+        select_district = driver.find_element_by_id('cmbDistrict')
+        districts = select_district.find_elements_by_tag_name('option')
+        for district_elt in districts:
+            district = district_elt.text
+            if district == 'Statewide':
+                continue
+            district_number = district[-7:-3]
+            district_type = district[-2:]
+            district_name = district[:-8]
+            if year == starting_year and district < starting_district:
+                continue
+            print year, district_name
+            district_elt.click()
+            time.sleep(.2)
+            select_school = driver.find_element_by_id('cmbSchool')
+            schools = select_school.find_elements_by_tag_name('option')
+            for school_elt in schools:
+                school = school_elt.text
+                if school == 'All Schools':
+                    continue
+                school_number = school[-4:-1]
+                school_name = school[:-6]
+                school_elt.click()
+                button = driver.find_element_by_id('btnRunReport')
+                button.click()
+                time.sleep(.2)
+                driver.switch_to_frame(driver.find_element_by_id('HTMLRPT'))
+                tables = []
+                while len(tables) < 2:
+                    tables = driver.find_elements_by_tag_name('table')
+                t = table_to_array(tables[0])
+                students_served = t[5][0].split(': ', 1)[1]
+                t = table_to_array(tables[1])
+                driver.switch_to_default_content()
+                if len(t) < 22:
+                    logging.error((year, district_name, school_name))
+                else:
+                    for row_index in range(5, 16) + [18, 21]:
+                        row = [year, district_name, district_number, district_type,
+                               school_name, school_number, students_served] + t[row_index]
+                        cursor.execute("INSERT INTO Expenditures VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)", row)
+            con.commit()
+                
+    driver.close()
+                
+                    
 if __name__ == '__main__':
     get_main_menu()
-    url = get_report_url(44)  # Download staff data
+    url = get_report_url(28)
     download_reports(url)
+    scrape_expenditures(url)
+    
